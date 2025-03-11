@@ -4,70 +4,84 @@ import numpy as np
 from matplotlib.ticker import MaxNLocator
 import time
 import os
+import subprocess
+import re
+import platform
 
 def execute_traceroute(destination):
-    """
-    Executes a traceroute to the specified destination and returns the output.
-
-    Args:
-        destination (str): The hostname or IP address to trace
-
-    Returns:
-        str: The raw output from the traceroute command
-    """
-    # Your code here
-    # Hint: Use the subprocess module to run the traceroute command
-    # Make sure to handle potential errors
-
-    # Remove this line once you implement the function,
-    # and don't forget to *return* the output
-    pass
+    try:
+        # Use correct command based on OS
+        traceroute_cmd = ["traceroute", "-I", destination]
+        result = subprocess.run(traceroute_cmd, capture_output=True, text=True, check=True)
+        return result.stdout
+    except subprocess.CalledProcessError as e:
+        return f"Error executing traceroute: {e}"
+    except FileNotFoundError:
+        return "Traceroute command not found. Ensure it is installed on your system."
 
 def parse_traceroute(traceroute_output):
-    """
-    Parses the raw traceroute output into a structured format.
+    hops = []
+    
+    for line in traceroute_output.splitlines():
+        line = line.strip()
+        if not line or "traceroute to" in line:
+            continue
+        
+        match = re.match(
+            r"^\s*(\d+)\s+(?:\*+\s*)?(?:([\w\-.]+)\s*\(([\d\.]+)\)|([\d\.]+)|([\w\-.]+))?\s*(\*|\d+\.\d+ ms(?: !\w+)?)?\s*(\*|\d+\.\d+ ms(?: !\w+)?)?\s*(\*|\d+\.\d+ ms(?: !\w+)?)?",
+            line
+        )
 
-    Args:
-        traceroute_output (str): Raw output from the traceroute command
+        if match:
+            hop_num = int(match.group(1))
+            hostname = match.group(2) if match.group(2) else match.group(5) if match.group(5) else None
+            ip = match.group(3) if match.group(3) else match.group(4) if match.group(4) else None
 
-    Returns:
-        list: A list of dictionaries, each containing information about a hop:
-            - 'hop': The hop number (int)
-            - 'ip': The IP address of the router (str or None if timeout)
-            - 'hostname': The hostname of the router (str or None if same as ip)
-            - 'rtt': List of round-trip times in ms (list of floats, None for timeouts)
+            rtt = []
+            for i in range(6, 9):
+                rtt_value = match.group(i)
+                if rtt_value and rtt_value != '*':
+                    rtt.append(float(re.sub(r" !\w+", "", rtt_value).split()[0]))  # Remove flags
+                else:
+                    rtt.append(None)
 
-    Example:
-    ```
-        [
-            {
-                'hop': 1,
-                'ip': '172.21.160.1',
-                'hostname': 'HELDMANBACK.mshome.net',
-                'rtt': [0.334, 0.311, 0.302]
-            },
-            {
-                'hop': 2,
-                'ip': '10.103.29.254',
-                'hostname': None,
-                'rtt': [3.638, 3.630, 3.624]
-            },
-            {
-                'hop': 3,
-                'ip': None,  # For timeout/asterisk
-                'hostname': None,
-                'rtt': [None, None, None]
-            }
-        ]
-    ```
-    """
-    # Your code here
-    # Hint: Use regular expressions to extract the relevant information
-    # Handle timeouts (asterisks) appropriately
+            if hostname == ip:
+                hostname = None
 
-    # Remove this line once you implement the function,
-    # and don't forget to *return* the output
-    pass
+            hops.append({
+                "hop": hop_num,
+                "ip": ip,
+                "hostname": hostname,
+                "rtt": rtt
+            })
+
+    # --- Visualization Part ---
+    if not hops:
+        print("No valid hops found.")
+        return hops
+
+    hop_numbers = [hop["hop"] for hop in hops]
+
+    # Fix: Ensure only average non-None RTTs
+    avg_rtts = []
+    for hop in hops:
+        valid_rtts = [r for r in hop["rtt"] if r is not None]
+        avg_rtts.append(sum(valid_rtts) / len(valid_rtts) if valid_rtts else None)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(hop_numbers, avg_rtts, marker='o', linestyle='-', label="Traceroute RTT")
+    
+    plt.xlabel("Hop Number")
+    plt.ylabel("Average Round Trip Time (ms)")
+    plt.title("Traceroute Analysis")
+    plt.xticks(hop_numbers)
+    plt.legend()
+    plt.grid(True)
+
+    plt.show()
+
+    return hops
+
 
 # ============================================================================ #
 #                    DO NOT MODIFY THE CODE BELOW THIS LINE                    #
